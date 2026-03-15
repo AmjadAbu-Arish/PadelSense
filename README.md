@@ -13,5 +13,5 @@ PadelSense is an AI-powered padel analysis system that uses computer vision to d
 
 ## Team
 - Ahmad Labadi
-- Team Member 2
-- Team Member 3
+- Amjad Abu Arish
+- Karam Dayarneh
