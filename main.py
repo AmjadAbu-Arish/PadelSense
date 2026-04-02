@@ -59,8 +59,10 @@ def main():
     selector = ManualCourtSelector(first_frame)
     keypoints = selector.select_keypoints()
 
-    if len(keypoints) != 12:
-        print("12 keypoints were not selected. Proceeding without keypoints.")
+    if len(keypoints) == 0:
+        print("\nNo keypoints selected. Proceeding without manual court calibration.")
+    elif len(keypoints) != 12:
+        print(f"\n{len(keypoints)} keypoints were selected (expected 12). Proceeding with available keypoints.")
 
     # Reload video to read all frames
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -82,7 +84,12 @@ def main():
 
     print("Initializing BallTracker...")
     config = BallTrackerConfig()
-    tracker = BallTracker(config, "yolov8n.pt") # Ensure yolov8n.pt or valid model
+    model_path = "models/ball_detector/ball_detector.pt"
+    if not os.path.exists(model_path):
+        print(f"Warning: Model not found at {model_path}")
+        print("Using default YOLOv8n model instead.")
+        model_path = "yolov8n.pt"
+    tracker = BallTracker(config, model_path)
 
     print("Running detection...")
     raw_detections = tracker.detect_frames(frames, read_from_stub=False)

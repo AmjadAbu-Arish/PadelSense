@@ -9,8 +9,22 @@ class ManualCourtSelector:
         self.window_name = "Select 12 Court Keypoints"
 
     def select_keypoints(self):
-        cv2.namedWindow(self.window_name)
-        cv2.setMouseCallback(self.window_name, self._mouse_callback)
+        # Check if GUI support is available
+        has_gui = True
+        try:
+            cv2.namedWindow(self.window_name)
+            cv2.setMouseCallback(self.window_name, self._mouse_callback)
+        except cv2.error as e:
+            has_gui = False
+            print("\nGUI support not available in OpenCV installation.")
+            print("Cannot display keypoint selector.")
+            print("\nTo enable GUI, reinstall OpenCV with GUI support:")
+            print("  pip uninstall opencv-python -y")
+            print("  pip install -U opencv-python")
+            return []
+
+        if not has_gui:
+            return []
 
         print("Please click on 12 keypoints of the court.")
         print("Press 'r' to reset, 'c' to confirm/finish early, or 'q' to quit.")
