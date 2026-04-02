@@ -7,6 +7,12 @@ class ManualCourtSelector:
         self.original_frame = frame.copy()
         self.keypoints = []
         self.window_name = "Select 12 Court Keypoints"
+        self.keypoint_names = [
+            "Back Left Corner", "Service Line Left", "Net Left", "Service Line Left (Front)",
+            "Front Left Corner", "Front Right Corner", "Service Line Right (Front)",
+            "Net Right", "Service Line Right", "Back Right Corner",
+            "Center Service Line Back", "Center Service Line Front"
+        ]
 
     def select_keypoints(self):
         # Check if GUI support is available
@@ -26,8 +32,8 @@ class ManualCourtSelector:
         if not has_gui:
             return []
 
-        print("Please click on 12 keypoints of the court.")
-        print("Press 'r' to reset, 'c' to confirm/finish early, or 'q' to quit.")
+        print("Please click on 12 keypoints of the court in order.")
+        print("Press 'u' to undo, 'r' to reset, 'Enter' to confirm, or 'q' to quit.")
 
         while True:
             display_frame = self.frame.copy()
@@ -35,6 +41,14 @@ class ManualCourtSelector:
                 cv2.circle(display_frame, kp, 5, (0, 0, 255), -1)
                 cv2.putText(display_frame, str(i+1), (kp[0]+10, kp[1]+10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+            if len(self.keypoints) < 12:
+                prompt = f"Select Point {len(self.keypoints) + 1}: {self.keypoint_names[len(self.keypoints)]}"
+                cv2.putText(display_frame, prompt, (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            else:
+                cv2.putText(display_frame, "All 12 points selected. Press 'Enter' to confirm.", (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
             cv2.imshow(self.window_name, display_frame)
             key = cv2.waitKey(1) & 0xFF
@@ -44,10 +58,15 @@ class ManualCourtSelector:
             elif key == ord('r'):
                 self.keypoints = []
                 self.frame = self.original_frame.copy()
-            elif key == ord('c') or len(self.keypoints) == 12:
+            elif key == ord('u') or key == ord('U'):
+                if len(self.keypoints) > 0:
+                    self.keypoints.pop()
+            elif key == 13: # Enter key
                 if len(self.keypoints) == 12:
                     print("12 keypoints selected.")
-                break
+                    break
+                else:
+                    print(f"Please select all 12 points. Currently selected: {len(self.keypoints)}")
 
         cv2.destroyWindow(self.window_name)
         return self.keypoints
@@ -56,3 +75,5 @@ class ManualCourtSelector:
         if event == cv2.EVENT_LBUTTONDOWN:
             if len(self.keypoints) < 12:
                 self.keypoints.append((x, y))
+            else:
+                print("12 points already selected. Press 'Enter' to confirm or 'u' to undo.")

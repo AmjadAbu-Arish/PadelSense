@@ -106,6 +106,54 @@ class BallTracker:
 
         return interpolated_positions
 
+    def extract_lstm_features(self, interpolated_positions: List[Dict[int, List[float]]], window_size: int = 15) -> pd.DataFrame:
+        """
+        Extract features for the Deep Learning Event Detector.
+        Exports a sequence of the last `window_size` frames of (x, y, dx, dy, velocity, acceleration).
+        Returns a DataFrame.
+        """
+        data = []
+        for frame_idx, frame_data in enumerate(interpolated_positions):
+            if 1 in frame_data:
+                bbox = frame_data[1]
+                x_c = (bbox[0] + bbox[2]) / 2.0
+                y_c = (bbox[1] + bbox[3]) / 2.0
+                data.append({'frame': frame_idx, 'x': x_c, 'y': y_c})
+            else:
+                data.append({'frame': frame_idx, 'x': None, 'y': None})
+
+        df = pd.DataFrame(data)
+
+        # Convert columns to numeric to avoid diff() TypeError if all are None
+        df['x'] = pd.to_numeric(df['x'])
+        df['y'] = pd.to_numeric(df['y'])
+
+        # Calculate dx and dy
+        df['dx'] = df['x'].diff().fillna(0)
+        df['dy'] = df['y'].diff().fillna(0)
+
+        # Calculate velocity (magnitude of dx, dy)
+        df['velocity'] = np.sqrt(df['dx']**2 + df['dy']**2)
+
+        # Calculate acceleration (diff of velocity)
+        df['acceleration'] = df['velocity'].diff().fillna(0)
+
+        # Create windowed features using shift for better performance
+        result_df = pd.DataFrame({'frame': df['frame']})
+
+        # Original features
+        base_features = ['x', 'y', 'dx', 'dy', 'velocity', 'acceleration']
+
+        # We want history up to window_size. Let's arrange so that
+        # suffix _0 is the oldest in window, and _(window_size-1) is the current frame.
+        for j in range(window_size):
+            shift_amount = window_size - 1 - j
+            for col in base_features:
+                shifted_col = df[col].shift(shift_amount).fillna(0)
+                result_df[f'{col}_{j}'] = shifted_col
+
+        return result_df
+
     def get_ball_shot_frames(self, ball_positions: List[Dict[int, List[float]]]) -> List[int]:
         data = []
         for frame_idx, frame_data in enumerate(ball_positions):
