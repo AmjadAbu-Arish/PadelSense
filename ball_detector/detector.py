@@ -127,33 +127,36 @@ class BallTracker:
         hits = []
         direction = 0 # 1 for down, -1 for up
         sustained_frames = 0
+        potential_hit_frame = None
 
         for i in range(1, len(df)):
             delta = df['delta_y'].iloc[i]
             if pd.isna(delta) or delta == 0:
-                # If delta is zero or NaN, maintain previous direction but don't count towards sustained if we want strict
-                # Let's just continue
-                sustained_frames += 1
+                # If delta is zero or NaN, continue tracking sustained frames
+                if direction != 0:
+                    sustained_frames += 1
                 continue
 
             current_direction = 1 if delta > 0 else -1
 
             if current_direction != direction:
-                if sustained_frames >= self.config.minimum_change_frames_for_hit:
-                    # Valid hit occurred
-                    # Inversion frame is i - sustained_frames
-                    hit_frame = df['frame'].iloc[i - sustained_frames]
-                    hits.append(int(hit_frame))
+                # Direction changed. The inversion happened here.
+                # If we had a previous potential hit frame that sustained the required frames, we can't record it here
+                # because the logic is to verify the *new* direction is sustained, not the old one.
+                # Actually, an inversion is verified if the NEW direction is sustained.
 
-                sustained_frames = 1
+                # So we mark this frame as a potential hit.
                 direction = current_direction
+                sustained_frames = 1
+                potential_hit_frame = df['frame'].iloc[i]
             else:
                 sustained_frames += 1
 
-        # Check last sequence
-        if sustained_frames >= self.config.minimum_change_frames_for_hit:
-            hit_frame = df['frame'].iloc[len(df) - sustained_frames]
-            hits.append(int(hit_frame))
+            # If the current direction has been sustained for exactly minimum_change_frames_for_hit,
+            # and we have a potential hit frame recorded, then it's a valid hit.
+            if sustained_frames == self.config.minimum_change_frames_for_hit and potential_hit_frame is not None:
+                hits.append(int(potential_hit_frame))
+                potential_hit_frame = None # Reset so we don't count it twice
 
         return hits
 
