@@ -19,6 +19,9 @@ def calculate_ball_speed(mapped_positions, fps=30.0):
 
     speeds = []
 
+    if not mapped_positions:
+        return []
+
     for i in range(len(mapped_positions)):
         if i == 0 or mapped_positions[i] is None or mapped_positions[i-1] is None:
             speeds.append(0.0)

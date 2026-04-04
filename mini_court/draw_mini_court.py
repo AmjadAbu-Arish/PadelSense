@@ -5,7 +5,7 @@ MINI_W = 200
 MINI_H = 400
 MINI_PAD = 20
 
-def draw_mini_court(frame, trail):
+def draw_mini_court(frame, trail, impact_mark=None):
     panel = np.zeros((MINI_H, MINI_W, 3), dtype=np.uint8)
     panel[:] = (40, 40, 40)
 
@@ -46,6 +46,11 @@ def draw_mini_court(frame, trail):
         bx, by = int(trail_list[-1][0]), int(trail_list[-1][1])
         cv2.circle(panel, (bx, by), 6, (0, 255, 0), -1)
         cv2.circle(panel, (bx, by), 6, (0, 0, 0), 1)
+
+    if impact_mark is not None:
+        ix, iy = int(impact_mark[0]), int(impact_mark[1])
+        cv2.circle(panel, (ix, iy), 10, (0, 0, 255), 2)
+        cv2.circle(panel, (ix, iy), 2, (0, 0, 255), -1)
 
     # Blend onto main frame
     H, W = frame.shape[:2]
