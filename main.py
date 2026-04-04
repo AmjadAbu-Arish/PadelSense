@@ -126,6 +126,25 @@ def main():
 
     from analysis.speed_analysis import calculate_ball_speed
     speeds = calculate_ball_speed(mini_court_positions, fps=fps)
+    if not speeds:
+        speeds = [None] * len(frames)
+
+    print("Applying Rules via Referee Engine...")
+    from rule_engine.referee_engine import RefereeEngine
+    ref_engine = RefereeEngine()
+    decisions = []
+
+    for i in range(len(frames)):
+        pos = mini_court_positions[i] if mini_court_positions else None
+        decision = ref_engine.update_state(events[i], mapped_position=pos)
+        decisions.append(decision)
+
+    print("Initializing UI Overlay Drawers...")
+    from output_module.overlay_drawer import ScoreboardDrawer, DecisionOverlayDrawer
+    scoreboard_drawer = ScoreboardDrawer()
+    decision_drawer = DecisionOverlayDrawer()
+
+    last_impact_mini_court_pos = None
 
     ENABLE_MANUAL_LABELING = False
     if ENABLE_MANUAL_LABELING:
@@ -134,8 +153,12 @@ def main():
         for i in range(len(frames)):
             frame = frames[i].copy()
             cv2.putText(frame, f"Frame {i}: Press b, g, n, o or space", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            cv2.imshow("Labeling", frame)
-            key = cv2.waitKey(0) & 0xFF
+            try:
+                cv2.imshow("Labeling", frame)
+                key = cv2.waitKey(0) & 0xFF
+            except cv2.error:
+                print("OpenCV GUI not available, skipping manual labeling.")
+                key = ord(' ')
             if key == ord('b'):
                 labels.append("bounce")
             elif key == ord('g'):
@@ -146,7 +169,10 @@ def main():
                 labels.append("out")
             else:
                 labels.append("none")
-        cv2.destroyAllWindows()
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
         lstm_features_df['label'] = labels
 
     if not os.path.exists("outputs"):
@@ -218,33 +244,39 @@ def main():
         timestamp_sec = i / fps if fps > 0 else 0.0
 
         event_val = events[i]
+        decision_val = decisions[i]
 
-        # If the LSTM detected an "out" or "net" event, we must log it properly.
-        # Let's say out is mapped to 'glass_hit' (or we just add an explicit check).
-        # We'll rely on the EventDetector's "net_contact" and a calculated Out event.
-        if near_line and event_val == "bounce":
-            # Simple heuristic for Out if near line and bounce detected but slightly outside
-            # We will just log what the LSTM outputs for now, plus speed and timestamp.
-            pass
+        if decision_val in ["IN", "OUT", "NET"]:
+            decision_drawer.trigger(decision_val, frames=int(fps))
+            # Replay marker logic: Draw a circle at the impact location
+            if x_c is not None and y_c is not None:
+                cv2.circle(frame, (int(x_c), int(y_c)), 15, (0, 0, 255), 3)
+
+            # Replay marker logic: save the impact location on the mini-court
+            if mini_court_positions and mini_court_positions[i]:
+                last_impact_mini_court_pos = mini_court_positions[i]
 
         csv_data.append({
-            'Frame': i,
-            'Timestamp': f"{timestamp_sec:.2f}",
-            'X': x_c,
-            'Y': y_c,
-            'Speed_kmh': speeds[i],
-            'Event': event_val,
-            'Confidence': conf if x_c is not None else None,
-            'Near_Line': near_line,
-            'Low_Confidence_Warning': low_confidence_warning
+            'Frame_Index': i,
+            'Event_Type': event_val,
+            'Decision': decision_val if decision_val in ["IN", "OUT", "NET"] else "",
+            'Ball_Speed_kmh': f"{speeds[i]:.2f}" if speeds[i] is not None else ""
         })
+
+        # Apply UI Overlays
+        frame = scoreboard_drawer.draw(frame, ref_engine.get_current_score())
+        frame = decision_drawer.draw(frame)
 
         # Draw Mini Court
         if len(keypoints) >= 12 and mini_court_positions: # basic check to ensure mapping exists
             # Pass a trail of up to 15 frames
             trail_start = max(0, i - 15)
             trail = mini_court_positions[trail_start:i+1]
-            frame = draw_mini_court(frame, trail)
+
+            # Pass impact mark if decision overlay is currently showing
+            impact_mark = last_impact_mini_court_pos if decision_drawer.frames_to_show > 0 else None
+
+            frame = draw_mini_court(frame, trail, impact_mark=impact_mark)
 
         # Draw tracked players
         for p in all_tracked_players[i]:
@@ -257,9 +289,9 @@ def main():
 
     out.release()
 
-    print("Saving ball coordinates to CSV...")
+    print("Saving Match Summary to CSV...")
     df = pd.DataFrame(csv_data)
-    df.to_csv(os.path.join("outputs", "ball_coordinates.csv"), index=False)
+    df.to_csv(os.path.join("outputs", "match_summary.csv"), index=False)
 
     print("Generating Heatmap...")
     from analysis.heatmap_generator import HeatmapGenerator

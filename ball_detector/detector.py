@@ -15,11 +15,49 @@ class BallTrackerConfig:
     max_prediction_step: int = 5
     missed_prediction_boost: float = 1.2
     minimum_change_frames_for_hit: int = 25
+    use_tracknet: bool = True
+
+import torch
+import torch.nn as nn
+
+class TrackNetV3(nn.Module):
+    # A simplified conceptual TrackNet V3 architecture for heatmap prediction
+    def __init__(self, in_channels=9, out_channels=256):
+        super(TrackNetV3, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        # simplified for placeholder purposes
+
+    def forward(self, x):
+        x = self.relu(self.conv1(x))
+        x = self.pool(x)
+        x = self.relu(self.conv2(x))
+        return x
+
+class TrackNetFusion:
+    def __init__(self, model_path=None):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = TrackNetV3().to(self.device)
+        self.model.eval()
+        if model_path and os.path.exists(model_path):
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+
+    def predict(self, frames):
+        # Process 3 consecutive frames to predict ball heatmaps
+        # Here we just simulate the fallback logic if TrackNet cannot find a ball
+        # In a real scenario, this would process the sequence of images through the CNN
+        return [None] * len(frames)
 
 class BallTracker:
     def __init__(self, config: BallTrackerConfig, model_path: str):
         self.config = config
         self.model = YOLO(model_path)
+        if self.config.use_tracknet:
+            self.tracknet = TrackNetFusion()
+        else:
+            self.tracknet = None
 
     def detect_frames(self, frames: List[np.ndarray], read_from_stub: bool = False, stub_path: Optional[str] = None) -> List[Dict[int, List[float]]]:
         if read_from_stub and stub_path and os.path.exists(stub_path):
@@ -30,7 +68,10 @@ class BallTracker:
         prev_center = None
         missed_frames = 0
 
-        for frame in frames:
+        # If TrackNet is used, get its predictions (dummy for now)
+        tracknet_preds = self.tracknet.predict(frames) if self.tracknet else [None] * len(frames)
+
+        for idx, frame in enumerate(frames):
             results = self.model(frame)[0]
             boxes = results.boxes
 
@@ -62,6 +103,14 @@ class BallTracker:
                     best_score = score
                     best_box = coords
                     best_center = (center_x, center_y)
+
+            # TrackNet fusion logic
+            tn_pred = tracknet_preds[idx]
+            if tn_pred is not None:
+                # If TrackNet provides a prediction, fuse it with YOLO
+                # e.g., if YOLO confidence is low, trust TrackNet
+                # For this stub, we just pretend it might override YOLO if it existed
+                pass
 
             # Match condition
             if best_box is not None and (prev_center is None or best_score > 0):
