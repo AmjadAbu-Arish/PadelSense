@@ -107,6 +107,26 @@ def main():
     # We map all positions to the mini court
     mini_court_positions = map_to_mini_court(interpolated_positions, keypoints)
 
+    print("Tracking players...")
+    from player_detector.detector import PlayerTracker
+    player_tracker = PlayerTracker(model_path="yolov8n.pt")
+
+    from mini_court.mini_court_mapper import get_homography
+    H_mat = get_homography(keypoints)
+
+    all_tracked_players = []
+    for frame in tqdm(frames, desc="Tracking players"):
+        detected_players = player_tracker.detect_and_track(frame)
+        projected = player_tracker.project_to_mini_court(detected_players, H_mat)
+        all_tracked_players.append(projected)
+
+    print("Detecting Events with Bi-LSTM...")
+    from event_detector.event_classifier import classify_events
+    events = classify_events(lstm_features_df)
+
+    from analysis.speed_analysis import calculate_ball_speed
+    speeds = calculate_ball_speed(mini_court_positions, fps=fps)
+
     ENABLE_MANUAL_LABELING = False
     if ENABLE_MANUAL_LABELING:
         print("Manual labeling enabled. Press 'b'(bounce), 'g'(glass), 'n'(net), 'o'(out), or space to skip.")
@@ -194,10 +214,26 @@ def main():
                 if conf == 0.5: # Indicates it was predicted/interpolated by checking our dummy value
                     low_confidence_warning = True
 
+        # Convert frame to timestamp for logging
+        timestamp_sec = i / fps if fps > 0 else 0.0
+
+        event_val = events[i]
+
+        # If the LSTM detected an "out" or "net" event, we must log it properly.
+        # Let's say out is mapped to 'glass_hit' (or we just add an explicit check).
+        # We'll rely on the EventDetector's "net_contact" and a calculated Out event.
+        if near_line and event_val == "bounce":
+            # Simple heuristic for Out if near line and bounce detected but slightly outside
+            # We will just log what the LSTM outputs for now, plus speed and timestamp.
+            pass
+
         csv_data.append({
             'Frame': i,
+            'Timestamp': f"{timestamp_sec:.2f}",
             'X': x_c,
             'Y': y_c,
+            'Speed_kmh': speeds[i],
+            'Event': event_val,
             'Confidence': conf if x_c is not None else None,
             'Near_Line': near_line,
             'Low_Confidence_Warning': low_confidence_warning
@@ -210,6 +246,13 @@ def main():
             trail = mini_court_positions[trail_start:i+1]
             frame = draw_mini_court(frame, trail)
 
+        # Draw tracked players
+        for p in all_tracked_players[i]:
+            px1, py1, px2, py2 = map(int, p['bbox'])
+            cv2.rectangle(frame, (px1, py1), (px2, py2), (255, 0, 0), 2)
+            cv2.putText(frame, f"ID: {p['id']} ({p['team']})", (px1, py1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
         out.write(frame)
 
     out.release()
@@ -218,7 +261,12 @@ def main():
     df = pd.DataFrame(csv_data)
     df.to_csv(os.path.join("outputs", "ball_coordinates.csv"), index=False)
 
-    print("Processing complete!")
+    print("Generating Heatmap...")
+    from analysis.heatmap_generator import HeatmapGenerator
+    heatmap_gen = HeatmapGenerator()
+    heatmap_gen.generate(mini_court_positions, output_path=os.path.join("outputs", "heatmap.png"))
+
+    print("Processing complete! Run 'streamlit run dashboard.py' to view the dashboard.")
 
 
 if __name__ == "__main__":
