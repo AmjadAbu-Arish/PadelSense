@@ -42,20 +42,27 @@ class ManualCourtSelector:
                 cv2.putText(display_frame, str(i+1), (kp[0]+10, kp[1]+10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
+            # Add general instructions
+            cv2.putText(display_frame, "Controls: [U] Undo | [R] Reset | [Enter] Confirm | [Q] Quit",
+                        (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
             if len(self.keypoints) < 12:
-                prompt = f"Select Point {len(self.keypoints) + 1}: {self.keypoint_names[len(self.keypoints)]}"
-                cv2.putText(display_frame, prompt, (20, 40),
+                prompt = f"Click to Select Point {len(self.keypoints) + 1}/12:"
+                point_name = f"--> {self.keypoint_names[len(self.keypoints)]}"
+                cv2.putText(display_frame, prompt, (20, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                cv2.putText(display_frame, point_name, (20, 90),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
             else:
-                cv2.putText(display_frame, "All 12 points selected. Press 'Enter' to confirm.", (20, 40),
+                cv2.putText(display_frame, "All 12 points selected. Press 'Enter' to confirm.", (20, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
             cv2.imshow(self.window_name, display_frame)
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord('q'):
+            if key == ord('q') or key == ord('Q'):
                 break
-            elif key == ord('r'):
+            elif key == ord('r') or key == ord('R'):
                 self.keypoints = []
                 self.frame = self.original_frame.copy()
             elif key == ord('u') or key == ord('U'):

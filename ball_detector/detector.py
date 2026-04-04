@@ -83,26 +83,74 @@ class BallTracker:
         return ball_detections
 
     def interpolate_ball_positions(self, ball_positions: List[Dict[int, List[float]]]) -> List[Dict[int, List[float]]]:
-        data = []
-        for frame_idx, frame_data in enumerate(ball_positions):
-            if 1 in frame_data:
-                bbox = frame_data[1]
-                data.append({'frame': frame_idx, 'x1': bbox[0], 'y1': bbox[1], 'x2': bbox[2], 'y2': bbox[3]})
-            else:
-                data.append({'frame': frame_idx, 'x1': None, 'y1': None, 'x2': None, 'y2': None})
+        from filterpy.kalman import KalmanFilter
+        # Initialize a Constant Acceleration Kalman Filter
+        kf = KalmanFilter(dim_x=6, dim_z=2)
+        # State vector: [x, y, vx, vy, ax, ay]
+        kf.x = np.zeros(6)
 
-        df = pd.DataFrame(data)
+        # State transition matrix (F)
+        # Assuming dt = 1 for frames
+        dt = 1
+        kf.F = np.array([[1, 0, dt,  0, 0.5*dt**2,          0],
+                         [0, 1,  0, dt,         0, 0.5*dt**2],
+                         [0, 0,  1,  0,        dt,          0],
+                         [0, 0,  0,  1,         0,         dt],
+                         [0, 0,  0,  0,         1,          0],
+                         [0, 0,  0,  0,         0,          1]])
 
-        # Ensure coordinates are available for frames YOLO missed
-        df = df.interpolate(method='linear')
-        df = df.bfill()
+        # Measurement function (H)
+        kf.H = np.array([[1, 0, 0, 0, 0, 0],
+                         [0, 1, 0, 0, 0, 0]])
+
+        # Covariance matrices
+        kf.P *= 1000.  # Initial state uncertainty
+        kf.R = np.eye(2) * 5  # Measurement noise
+        from filterpy.common import Q_discrete_white_noise
+        # Process noise: assume we can model the unmodeled acceleration
+        # block_diag isn't strictly necessary if we just use a simple approx:
+        kf.Q = np.eye(6) * 0.1
 
         interpolated_positions = []
-        for idx, row in df.iterrows():
-            if pd.isna(row['x1']):
-                interpolated_positions.append({})
+        initialized = False
+
+        # To reconstruct bounding boxes, we'll keep track of the average width and height
+        avg_w, avg_h = 0, 0
+        w_h_count = 0
+
+        # Run Kalman filter forward
+        for frame_idx, frame_data in enumerate(ball_positions):
+            kf.predict()
+
+            if 1 in frame_data:
+                bbox = frame_data[1]
+                x_c = (bbox[0] + bbox[2]) / 2.0
+                y_c = (bbox[1] + bbox[3]) / 2.0
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+
+                # Update running average of w and h
+                avg_w = (avg_w * w_h_count + w) / (w_h_count + 1)
+                avg_h = (avg_h * w_h_count + h) / (w_h_count + 1)
+                w_h_count += 1
+
+                z = np.array([x_c, y_c])
+
+                if not initialized:
+                    kf.x[:2] = z
+                    initialized = True
+
+                kf.update(z)
+                # Output smoothed detection
+                out_x, out_y = kf.x[0], kf.x[1]
+                interpolated_positions.append({1: [out_x - avg_w/2, out_y - avg_h/2, out_x + avg_w/2, out_y + avg_h/2]})
             else:
-                interpolated_positions.append({1: [row['x1'], row['y1'], row['x2'], row['y2']]})
+                if initialized:
+                    # Missing detection: use prediction
+                    out_x, out_y = kf.x[0], kf.x[1]
+                    interpolated_positions.append({1: [out_x - avg_w/2, out_y - avg_h/2, out_x + avg_w/2, out_y + avg_h/2]})
+                else:
+                    interpolated_positions.append({})
 
         return interpolated_positions
 
@@ -139,7 +187,7 @@ class BallTracker:
         df['acceleration'] = df['velocity'].diff().fillna(0)
 
         # Create windowed features using shift for better performance
-        result_df = pd.DataFrame({'frame': df['frame']})
+        df_out = pd.DataFrame({'frame': df['frame']})
 
         # Original features
         base_features = ['x', 'y', 'dx', 'dy', 'velocity', 'acceleration']
@@ -150,9 +198,9 @@ class BallTracker:
             shift_amount = window_size - 1 - j
             for col in base_features:
                 shifted_col = df[col].shift(shift_amount).fillna(0)
-                result_df[f'{col}_{j}'] = shifted_col
+                df_out[f'{col}_{j}'] = shifted_col
 
-        return result_df
+        return df_out
 
     def get_ball_shot_frames(self, ball_positions: List[Dict[int, List[float]]]) -> List[int]:
         data = []
