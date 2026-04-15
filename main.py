@@ -1,11 +1,13 @@
+import os
+
+# Fix for OpenMP "libiomp5md.dll already initialized" error when importing torch and scipy/numpy together
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from input_handler import (
     DisplayConfig,
     InputHandlerRuntime,
     PreprocessingConfig,
 )
-
-
-import os
 
 def choose_video_file():
     input_dir = "input_videos"
