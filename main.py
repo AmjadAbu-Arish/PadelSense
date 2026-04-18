@@ -56,13 +56,45 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
-    keypoints = selector.select_keypoints()
+    import json
 
-    if len(keypoints) == 0:
-        print("\nNo keypoints selected. Proceeding without manual court calibration.")
-    elif len(keypoints) != 12:
-        print(f"\n{len(keypoints)} keypoints were selected (expected 12). Proceeding with available keypoints.")
+    keypoints = []
+    config_path = "court_config.json"
+
+    # Try to load existing configuration
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            config_data = json.load(f)
+
+        if video_path in config_data:
+            print("\nSaved keypoints found for this video.")
+            skip_choice = input("Press [S] to Skip manual selection and use saved points, or any other key to recalibrate: ").strip().lower()
+            if skip_choice == 's':
+                keypoints = config_data[video_path]
+                print("Loaded saved keypoints.")
+
+    if len(keypoints) != 12:
+        selector = ManualCourtSelector(first_frame)
+        keypoints = selector.select_keypoints()
+
+        if len(keypoints) == 12:
+            # Save the newly selected keypoints
+            config_data = {}
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    try:
+                        config_data = json.load(f)
+                    except json.JSONDecodeError:
+                        pass
+
+            config_data[video_path] = keypoints
+            with open(config_path, "w") as f:
+                json.dump(config_data, f, indent=4)
+            print("Saved new keypoints for future use.")
+        elif len(keypoints) == 0:
+            print("\nNo keypoints selected. Proceeding without manual court calibration.")
+        else:
+            print(f"\n{len(keypoints)} keypoints were selected (expected 12). Proceeding with available keypoints.")
 
     # Reload video to read all frames
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -100,16 +132,21 @@ def main():
     print("Extracting LSTM features...")
     lstm_features_df = tracker.extract_lstm_features(interpolated_positions)
 
+    print("Extracting bounce events for Z-Axis mapping fix...")
+    # Get bounces to only map court positions when the ball hits the ground
+    bounces = tracker.get_ball_shot_frames(interpolated_positions)
+
     print("Mapping to mini court...")
     from mini_court.mini_court_mapper import map_to_mini_court
     from mini_court.draw_mini_court import draw_mini_court
 
-    # We map all positions to the mini court
-    mini_court_positions = map_to_mini_court(interpolated_positions, keypoints)
+    # We map all positions to the mini court but restrict to bounce events
+    mini_court_positions = map_to_mini_court(interpolated_positions, keypoints, bounces=bounces)
 
     print("Tracking players...")
     from player_detector.detector import PlayerTracker
-    player_tracker = PlayerTracker(model_path="yolov8n.pt")
+    # Upgrade to YOLO11 for player detection
+    player_tracker = PlayerTracker(model_path="yolo11n.pt")
 
     from mini_court.mini_court_mapper import get_homography
     H_mat = get_homography(keypoints)

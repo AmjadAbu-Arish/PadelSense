@@ -8,10 +8,30 @@ class RefereeEngine:
         if self.state == "Service":
             if event == "player_hit":
                 self.state = "In-Play"
+            elif event == "bounce" and mapped_position:
+                # Must hit service box first
+                mx, my = mapped_position
+                MINI_W, MINI_H, MINI_PAD = 200, 400, 20
+                net_y = MINI_H / 2
+                svc_front_y = MINI_PAD + (3.05 / 20.0) * (MINI_H - 2 * MINI_PAD)
+                svc_back_y = MINI_PAD + (16.95 / 20.0) * (MINI_H - 2 * MINI_PAD)
+
+                # Check if bounce is in service boxes (between net and service lines)
+                # This is simplified - real logic would check the specific box based on server
+                in_service_box = (mx > MINI_PAD and mx < MINI_W - MINI_PAD) and \
+                                 ((my > net_y and my < svc_back_y) or (my < net_y and my > svc_front_y))
+
+                if not in_service_box:
+                    self.state = "Point-Over"
+                    self._increment_score()
+                    return "Fault Service"
             return "Valid Service"
 
         elif self.state == "In-Play":
             if event == "bounce":
+                # Ball hit the turf
+                self.last_contact = "turf"
+
                 # Check if out of bounds based on mapped_position
                 if mapped_position:
                     mx, my = mapped_position
@@ -23,14 +43,23 @@ class RefereeEngine:
                         return "OUT"
                 return "IN"
             elif event == "glass_hit":
-                self.state = "Point-Over"
-                self._increment_score()
-                return "OUT"
+                if getattr(self, "last_contact", None) == "turf":
+                    # Turf then glass is IN
+                    self.last_contact = "glass"
+                    return "IN"
+                else:
+                    # Glass before turf is OUT
+                    self.state = "Point-Over"
+                    self._increment_score()
+                    return "OUT"
             elif event == "net_contact":
                 # Assuming net_contact means it didn't cross
                 self.state = "Point-Over"
                 self._increment_score()
                 return "NET"
+            elif event == "player_hit":
+                # Reset last contact
+                self.last_contact = "player"
 
         elif self.state == "Point-Over":
             # Just a placeholder to wait for next service

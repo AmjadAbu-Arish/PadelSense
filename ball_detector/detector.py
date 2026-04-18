@@ -68,18 +68,25 @@ class BallTracker:
         prev_center = None
         missed_frames = 0
 
-        # If TrackNet is used, get its predictions (dummy for now)
+        # Performance optimization: run TrackNet (if used) efficiently
         tracknet_preds = self.tracknet.predict(frames) if self.tracknet else [None] * len(frames)
 
-        for idx, frame in enumerate(frames):
-            results = self.model(frame)[0]
+        # Batching YOLO inferences to improve FPS
+        batch_size = 16
+        all_results = []
+        for i in range(0, len(frames), batch_size):
+            batch = frames[i:i+batch_size]
+            # Use FP16 if available for speed
+            results = self.model(batch, half=True, verbose=False)
+            all_results.extend(results)
+
+        for idx, (frame, results) in enumerate(zip(frames, all_results)):
             boxes = results.boxes
 
             best_score = -float('inf')
             best_box = None
             best_center = None
 
-            # Predict max distance for this frame based on missed frames
             max_dist = self.config.max_prediction_step * (self.config.missed_prediction_boost ** missed_frames)
 
             for box in boxes:
@@ -91,10 +98,7 @@ class BallTracker:
 
                 if prev_center is not None:
                     dist = np.sqrt((center_x - prev_center[0])**2 + (center_y - prev_center[1])**2)
-                    # Normalize distance score (e.g. max score 1 when dist=0)
                     dist_score = max(0, 1 - (dist / max(1, max_dist)))
-
-                    # Weighted scoring: Distance 0.78 vs Confidence 0.22
                     score = (dist_score * 0.78) + (conf * 0.22)
                 else:
                     score = conf
@@ -104,15 +108,18 @@ class BallTracker:
                     best_box = coords
                     best_center = (center_x, center_y)
 
-            # TrackNet fusion logic
+            # TrackNet fusion logic for handling motion blur and high-speed shots
             tn_pred = tracknet_preds[idx]
             if tn_pred is not None:
-                # If TrackNet provides a prediction, fuse it with YOLO
-                # e.g., if YOLO confidence is low, trust TrackNet
-                # For this stub, we just pretend it might override YOLO if it existed
-                pass
+                # Normalizing TrackNet's heatmap coordinates to YOLO format [x1, y1, x2, y2]
+                tn_x, tn_y, tn_conf = tn_pred
+                if tn_conf > 0.5 and (best_score < 0.3 or best_box is None):
+                    # Override YOLO with TrackNet prediction
+                    box_w, box_h = 10, 10 # Default ball bounding box size from TrackNet center
+                    best_box = [tn_x - box_w/2, tn_y - box_h/2, tn_x + box_w/2, tn_y + box_h/2]
+                    best_center = (tn_x, tn_y)
+                    best_score = tn_conf
 
-            # Match condition
             if best_box is not None and (prev_center is None or best_score > 0):
                 ball_detections.append({1: best_box})
                 prev_center = best_center
