@@ -64,18 +64,15 @@ def map_to_mini_court(positions, court_keypoints, bounces=None):
     print("Mapping positions to mini court...")
     mapped_positions = []
 
-    # We maintain the last valid ground mapping for non-bounce frames if we have one.
-    # Alternatively, we could only map on bounce frames and leave others None.
-    # To properly plot heatmaps and track paths, we should just map standard trajectories,
-    # but the prompt requires:
-    # "only trigger court-position mapping during a bounce event (lowest Y-coordinate in a trajectory arc)."
+    last_valid_pos = None
 
     for i, pos_dict in enumerate(positions):
+        # Determine if this frame is a bounce frame
         is_bounce = False
         if bounces and i in bounces:
             is_bounce = True
 
-        if 1 in pos_dict and (bounces is None or is_bounce):
+        if 1 in pos_dict:
             bbox = pos_dict[1]
             cx = (bbox[0] + bbox[2]) / 2.0
             cy = bbox[3] # map the bottom of the bounding box
@@ -85,8 +82,12 @@ def map_to_mini_court(positions, court_keypoints, bounces=None):
 
             mx = float(mini_pt[0])
             my = float(mini_pt[1])
-            mapped_positions.append((mx, my))
-        else:
-            mapped_positions.append(None)
+
+            # Update position ONLY if it's a bounce OR if we aren't enforcing bounces
+            if bounces is None or is_bounce:
+                last_valid_pos = (mx, my)
+
+        # Append either the mapped bounce, the last known bounce position, or None
+        mapped_positions.append(last_valid_pos)
 
     return mapped_positions

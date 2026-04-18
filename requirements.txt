@@ -6,5 +6,5 @@ filterpy==1.4.5
 streamlit==1.32.0
 torch==2.2.0
 torchvision==0.17.0
-ultralytics==8.1.0
+ultralytics
 tqdm==4.67.3

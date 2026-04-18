@@ -72,13 +72,15 @@ with col2:
             df_events = df_events[(df_events["Event_Type"].notna()) & (df_events["Event_Type"] != "none")]
 
         if not df_events.empty:
-            # Assuming ~30 fps for a basic timestamp mapping if Timestamp column doesn't exist
-            if "Timestamp" not in df_events.columns:
-                df_events["Timestamp"] = (df_events["Frame_Index"] / 30.0).apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}")
+            # Drop empty columns safely
+            if "Timestamp" not in df_events.columns and "Frame_Index" in df_events.columns:
+                df_events["Timestamp"] = pd.to_numeric(df_events["Frame_Index"], errors="coerce").fillna(0)
+                df_events["Timestamp"] = (df_events["Timestamp"] / 30.0).apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}")
 
-            display_cols = ["Timestamp", "Frame_Index", "Event_Type"]
-            if has_decision:
-                display_cols.append("Decision")
+            display_cols = []
+            for col in ["Timestamp", "Frame_Index", "Event_Type", "Decision"]:
+                if col in df_events.columns:
+                    display_cols.append(col)
 
             st.dataframe(df_events[display_cols], use_container_width=True, hide_index=True)
         else:

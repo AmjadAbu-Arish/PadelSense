@@ -221,7 +221,8 @@ def main():
     print("Rendering output video...")
 
     output_path = os.path.join("outputs", "output_video.mp4")
-    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+    # Use avc1 for better browser/Streamlit compatibility instead of mp4v
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'avc1'), fps, (width, height))
 
     csv_data = []
 
@@ -280,11 +281,21 @@ def main():
         # Convert frame to timestamp for logging
         timestamp_sec = i / fps if fps > 0 else 0.0
 
+        # Frame counter display
+        cv2.putText(frame, f"Frame: {i}/{frame_count}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
         event_val = events[i]
         decision_val = decisions[i]
 
+        # Display specific event action (e.g., BOUNCE, GLASS)
+        if event_val and event_val != "none":
+            cv2.putText(frame, f"Action: {event_val.upper()}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
         if decision_val in ["IN", "OUT", "NET"]:
-            decision_drawer.trigger(decision_val, frames=int(fps))
+            # Combine decision with event context for better clarity
+            full_decision_text = f"{decision_val} ({event_val.upper()})" if event_val and event_val != "none" else decision_val
+            decision_drawer.trigger(full_decision_text, frames=int(fps))
+
             # Replay marker logic: Draw a circle at the impact location
             if x_c is not None and y_c is not None:
                 cv2.circle(frame, (int(x_c), int(y_c)), 15, (0, 0, 255), 3)
@@ -324,6 +335,9 @@ def main():
 
         out.write(frame)
 
+        # Save frame for interactive viewer later
+        frames[i] = frame
+
     out.release()
 
     print("Saving Match Summary to CSV...")
@@ -335,7 +349,45 @@ def main():
     heatmap_gen = HeatmapGenerator()
     heatmap_gen.generate(mini_court_positions, output_path=os.path.join("outputs", "heatmap.png"))
 
-    print("Processing complete! Run 'streamlit run dashboard.py' to view the dashboard.")
+    print("Processing complete!")
+
+    # Interactive Frame-by-Frame Viewer
+    try:
+        cv2.namedWindow("Interactive Viewer")
+        print("\n--- Interactive Viewer ---")
+        print("Controls: [A] Rewind 1 frame | [D] Forward 1 frame | [W] Play/Pause | [Q] Quit")
+
+        frame_idx = 0
+        playing = False
+
+        while True:
+            cv2.imshow("Interactive Viewer", frames[frame_idx])
+
+            # Wait for 30ms if playing, otherwise wait indefinitely
+            key = cv2.waitKey(30 if playing else 0) & 0xFF
+
+            if key == ord('q'):
+                break
+            elif key == ord('a') and frame_idx > 0:
+                frame_idx -= 1
+                playing = False
+            elif key == ord('d') and frame_idx < len(frames) - 1:
+                frame_idx += 1
+                playing = False
+            elif key == ord('w'):
+                playing = not playing
+
+            if playing:
+                if frame_idx < len(frames) - 1:
+                    frame_idx += 1
+                else:
+                    playing = False
+
+        cv2.destroyAllWindows()
+    except cv2.error:
+        print("\nOpenCV GUI not available for Interactive Viewer. Skipping.")
+
+    print("Run 'streamlit run dashboard.py' to view the dashboard.")
 
 
 if __name__ == "__main__":

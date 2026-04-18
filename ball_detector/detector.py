@@ -77,7 +77,7 @@ class BallTracker:
         for i in range(0, len(frames), batch_size):
             batch = frames[i:i+batch_size]
             # Use FP16 if available for speed
-            results = self.model(batch, half=True, verbose=False)
+            results = self.model(batch, half=False, verbose=False)
             all_results.extend(results)
 
         for idx, (frame, results) in enumerate(zip(frames, all_results)):
