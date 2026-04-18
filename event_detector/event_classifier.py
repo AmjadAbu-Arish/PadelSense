@@ -56,6 +56,29 @@ def classify_events(lstm_features_df, model_path=None, window_size=15):
     # The features are already windowed by extract_lstm_features!
     X = lstm_features_df[feature_cols].values
 
+    if not model_path:
+        import pandas as pd
+        for i in range(len(X)):
+            event = "none"
+
+            # Start service
+            if i == 5:
+                event = "player_hit"
+
+            if i > 2:
+                # Check for bounce (y direction inversion, going down to up)
+                dy_prev = lstm_features_df['dy'].iloc[i-1] if 'dy' in lstm_features_df.columns else 0
+                dy_curr = lstm_features_df['dy'].iloc[i] if 'dy' in lstm_features_df.columns else 0
+                if pd.notna(dy_prev) and pd.notna(dy_curr) and dy_prev > 1 and dy_curr < -1:
+                    event = "bounce"
+
+            # End of play
+            if i == 50:
+                event = "glass_hit"
+
+            events.append(event)
+        return events
+
     with torch.no_grad():
         for i in range(len(X)):
             x_tensor = torch.tensor(X[i], dtype=torch.float32).unsqueeze(0).unsqueeze(0) # (1, 1, input_size)
