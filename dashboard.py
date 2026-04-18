@@ -8,7 +8,7 @@ st.set_page_config(page_title="PadelSense Dashboard", layout="wide")
 st.title("🎾 PadelSense Analytics Dashboard")
 
 # Paths
-CSV_PATH = "outputs/match_summary.csv"
+CSV_PATH = "outputs/ball_coordinates.csv"
 VIDEO_PATH = "outputs/output_video.mp4"
 HEATMAP_PATH = "outputs/heatmap.png"
 
@@ -33,56 +33,31 @@ with col1:
         st.info("No output video found. Please run the main script first.")
 
     st.subheader("Ball Speed Analysis")
-    if df is not None and "Ball_Speed_kmh" in df.columns:
-        # Fill NaN values and convert to numeric for plotting
-        df_speed = df.copy()
-        df_speed["Ball_Speed_kmh"] = pd.to_numeric(df_speed["Ball_Speed_kmh"], errors="coerce").fillna(0)
-        df_speed = df_speed[df_speed["Ball_Speed_kmh"] > 0]
+    if df is not None and "Speed_kmh" in df.columns:
+        # Filter out rows with speed = 0.0 for a cleaner plot (optional)
+        df_speed = df[df["Speed_kmh"] > 0]
+        st.line_chart(df_speed, x="Frame", y="Speed_kmh", use_container_width=True)
 
-        if not df_speed.empty:
-            st.line_chart(df_speed, x="Frame_Index", y="Ball_Speed_kmh", use_container_width=True)
-            st.metric(label="Max Speed", value=f"{df_speed['Ball_Speed_kmh'].max():.1f} km/h")
-            st.metric(label="Average Speed", value=f"{df_speed['Ball_Speed_kmh'].mean():.1f} km/h")
-        else:
-            st.info("No active ball speed data found.")
+        st.metric(label="Max Speed", value=f"{df['Speed_kmh'].max():.1f} km/h")
+        st.metric(label="Average Speed", value=f"{df_speed['Speed_kmh'].mean():.1f} km/h")
     else:
         st.info("Speed data not available in CSV.")
 
 with col2:
-    st.subheader("Mini-Court Heatmap")
+    st.subheader("Ball Position Heatmap")
     if os.path.exists(HEATMAP_PATH):
         st.image(HEATMAP_PATH, caption="2D Density Map of Ball Positions", use_column_width=True)
     else:
         st.info("Heatmap image not found. Please run the main script first.")
 
-    st.subheader("Referee Event Log")
-    if df is not None and "Event_Type" in df.columns:
-        # Filter frames where a significant event or decision happened
-        df_events = df.copy()
-
-        # Check if decision column exists and has non-empty values
-        has_decision = "Decision" in df.columns
-
-        if has_decision:
-            # Filter rows where Event_Type is not none/empty OR Decision is not empty
-            mask = ((df_events["Event_Type"].notna()) & (df_events["Event_Type"] != "none") & (df_events["Event_Type"] != "")) | \
-                   ((df_events["Decision"].notna()) & (df_events["Decision"] != ""))
-            df_events = df_events[mask]
-        else:
-            df_events = df_events[(df_events["Event_Type"].notna()) & (df_events["Event_Type"] != "none")]
-
+    st.subheader("Detected Events")
+    if df is not None and "Event" in df.columns:
+        # Filter frames where an event happened
+        df_events = df[df["Event"] != "none"][["Frame", "Event", "Timestamp"]]
         if not df_events.empty:
-            # Assuming ~30 fps for a basic timestamp mapping if Timestamp column doesn't exist
-            if "Timestamp" not in df_events.columns:
-                df_events["Timestamp"] = (df_events["Frame_Index"] / 30.0).apply(lambda x: f"{int(x//60):02d}:{int(x%60):02d}")
-
-            display_cols = ["Timestamp", "Frame_Index", "Event_Type"]
-            if has_decision:
-                display_cols.append("Decision")
-
-            st.dataframe(df_events[display_cols], use_container_width=True, hide_index=True)
+            st.dataframe(df_events, use_container_width=True)
         else:
-            st.write("No specific referee events recorded.")
+            st.write("No specific referee events (Out, Net, etc.) recorded.")
     else:
         st.info("Event data not available in CSV.")
 
