@@ -20,12 +20,19 @@ def choose_video_file():
         path = input("Video path: ").strip().strip('"').strip("'")
         return path
 
-    print("\nAvailable videos in 'input_videos/':")
-    for i, vid in enumerate(videos):
-        print(f"[{i+1}] {vid}")
+    import sys
+    try:
+        if not sys.stdin.isatty():
+            return os.path.join(input_dir, videos[0])
 
-    print(f"\nSelect a video [1-{len(videos)}] or paste a full path:")
-    choice = input("Choice/Path: ").strip().strip('"').strip("'")
+        print("\nAvailable videos in 'input_videos/':")
+        for i, vid in enumerate(videos):
+            print(f"[{i+1}] {vid}")
+
+        print(f"\nSelect a video [1-{len(videos)}] or paste a full path:")
+        choice = input("Choice/Path: ").strip().strip('"').strip("'")
+    except EOFError:
+        return os.path.join(input_dir, videos[0])
 
     if choice.isdigit() and 1 <= int(choice) <= len(videos):
         return os.path.join(input_dir, videos[int(choice)-1])
