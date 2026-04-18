@@ -14,7 +14,8 @@ def build_mini_court_points():
     svc_front = 3.05
     svc_back  = 16.95
 
-    def rx(x): return int(p + (x / full_w) * w)
+    # Fix the homography orientation by reversing the X-axis map to un-mirror it relative to the camera
+    def rx(x): return int(p + ((full_w - x) / full_w) * w)
     def ry(y): return int(p + ((full_h - y) / full_h) * (MINI_H - 2 * MINI_PAD))
 
     # Our 12 points map to:
@@ -54,7 +55,7 @@ def get_homography(court_keypoints):
     H_mat, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     return H_mat
 
-def map_to_mini_court(positions, court_keypoints):
+def map_to_mini_court(positions, court_keypoints, bounces=None):
     H_mat = get_homography(court_keypoints)
     if H_mat is None:
         print("Cannot map to mini court: invalid keypoints or homography.")
@@ -63,8 +64,18 @@ def map_to_mini_court(positions, court_keypoints):
     print("Mapping positions to mini court...")
     mapped_positions = []
 
-    for pos_dict in positions:
-        if 1 in pos_dict:
+    # We maintain the last valid ground mapping for non-bounce frames if we have one.
+    # Alternatively, we could only map on bounce frames and leave others None.
+    # To properly plot heatmaps and track paths, we should just map standard trajectories,
+    # but the prompt requires:
+    # "only trigger court-position mapping during a bounce event (lowest Y-coordinate in a trajectory arc)."
+
+    for i, pos_dict in enumerate(positions):
+        is_bounce = False
+        if bounces and i in bounces:
+            is_bounce = True
+
+        if 1 in pos_dict and (bounces is None or is_bounce):
             bbox = pos_dict[1]
             cx = (bbox[0] + bbox[2]) / 2.0
             cy = bbox[3] # map the bottom of the bounding box
