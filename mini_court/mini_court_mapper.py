@@ -14,7 +14,8 @@ def build_mini_court_points():
     svc_front = 3.05
     svc_back  = 16.95
 
-    def rx(x): return int(p + (x / full_w) * w)
+    # To fix homography flip, we mirror the X-axis so x=0 maps to the right (full_w - x)
+    def rx(x): return int(p + ((full_w - x) / full_w) * w)
     def ry(y): return int(p + ((full_h - y) / full_h) * (MINI_H - 2 * MINI_PAD))
 
     # Our 12 points map to:
