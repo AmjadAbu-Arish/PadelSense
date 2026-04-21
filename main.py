@@ -40,6 +40,8 @@ def choose_video_file():
         return choice
 
 
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 import cv2
 import pandas as pd
 from tqdm import tqdm
@@ -58,18 +60,54 @@ def main():
         print(f"Failed to open {video_path}")
         return
 
+    import sys
+    import json
+    import hashlib
+
     ret, first_frame = cap.read()
     if not ret:
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
-    keypoints = selector.select_keypoints()
+    keypoints = []
+    # Create a simple hash of the video path to cache keypoints
+    video_hash = hashlib.md5(video_path.encode()).hexdigest()
+    cache_file = f"court_config_{video_hash}.json"
 
-    if len(keypoints) == 0:
-        print("\nNo keypoints selected. Proceeding without manual court calibration.")
-    elif len(keypoints) != 12:
-        print(f"\n{len(keypoints)} keypoints were selected (expected 12). Proceeding with available keypoints.")
+    loaded_from_cache = False
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                cached_data = json.load(f)
+                if len(cached_data) == 12:
+                    if not sys.stdin.isatty():
+                        print("Headless mode: Automatically loading keypoints from cache.")
+                        keypoints = [tuple(p) for p in cached_data]
+                        loaded_from_cache = True
+                    else:
+                        print("Cached keypoints found for this video.")
+                        choice = input("Press [S] to Skip manual selection and load them, or any other key to re-select: ").strip().lower()
+                        if choice == 's':
+                            keypoints = [tuple(p) for p in cached_data]
+                            loaded_from_cache = True
+        except Exception as e:
+            print(f"Error reading cache: {e}")
+
+    if not loaded_from_cache:
+        selector = ManualCourtSelector(first_frame)
+        keypoints = selector.select_keypoints()
+
+        if len(keypoints) == 0:
+            print("\nNo keypoints selected. Proceeding without manual court calibration.")
+        elif len(keypoints) != 12:
+            print(f"\n{len(keypoints)} keypoints were selected (expected 12). Proceeding with available keypoints.")
+        else:
+            try:
+                with open(cache_file, 'w') as f:
+                    json.dump(keypoints, f)
+                print(f"Saved 12 keypoints to cache: {cache_file}")
+            except Exception as e:
+                print(f"Error saving to cache: {e}")
 
     # Reload video to read all frames
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)

@@ -71,8 +71,16 @@ class BallTracker:
         # If TrackNet is used, get its predictions (dummy for now)
         tracknet_preds = self.tracknet.predict(frames) if self.tracknet else [None] * len(frames)
 
+        # Process frames in batches for better performance, with half=False
+        batch_size = 16
+        all_results = []
+        for i in range(0, len(frames), batch_size):
+            batch = frames[i:i + batch_size]
+            batch_results = self.model(batch, half=False)
+            all_results.extend(batch_results)
+
         for idx, frame in enumerate(frames):
-            results = self.model(frame)[0]
+            results = all_results[idx]
             boxes = results.boxes
 
             best_score = -float('inf')
@@ -107,10 +115,23 @@ class BallTracker:
             # TrackNet fusion logic
             tn_pred = tracknet_preds[idx]
             if tn_pred is not None:
-                # If TrackNet provides a prediction, fuse it with YOLO
-                # e.g., if YOLO confidence is low, trust TrackNet
-                # For this stub, we just pretend it might override YOLO if it existed
-                pass
+                # TrackNet prediction is provided, e.g., tuple of (heatmap_x, heatmap_y) or relative coordinates.
+                # Assuming tn_pred is normalized (0 to 1), we map it back to frame coordinates
+                if isinstance(tn_pred, tuple) and len(tn_pred) == 2:
+                    tn_norm_x, tn_norm_y = tn_pred
+                    tn_x = tn_norm_x * frame.shape[1]
+                    tn_y = tn_norm_y * frame.shape[0]
+
+                    # Create a dummy bounding box for TrackNet prediction since pipeline expects it
+                    # 10x10 is a standard ball size for this
+                    box_w, box_h = 10, 10
+                    tn_box = [tn_x - box_w/2, tn_y - box_h/2, tn_x + box_w/2, tn_y + box_h/2]
+
+                    # If YOLO missed or confidence is low, trust TrackNet
+                    if best_box is None or best_score < 0.5:
+                        best_box = tn_box
+                        best_center = (tn_x, tn_y)
+                        best_score = 1.0 # High confidence for TrackNet override
 
             # Match condition
             if best_box is not None and (prev_center is None or best_score > 0):
