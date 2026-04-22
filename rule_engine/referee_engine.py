@@ -15,24 +15,31 @@ class RefereeEngine:
                     self.serve_in_progress = False
                     if mapped_position:
                         mx, my = mapped_position
-                        # Dimensions from mini_court_mapper
                         MINI_W, MINI_H, MINI_PAD = 200, 400, 20
-                        # Net is at center of court:
                         NET_Y = MINI_PAD + (MINI_H - 2 * MINI_PAD) / 2.0
-                        # Service box lines
                         SVC_FRONT_OFFSET = ((MINI_H - 2 * MINI_PAD) / 20.0) * 3.05
                         SVC_BACK_OFFSET = ((MINI_H - 2 * MINI_PAD) / 20.0) * 16.95
 
                         # In padel, serve must hit the opponent's service box first.
-                        # We approximate it by checking if the ball bounces within the service box area (net_y to service line).
-                        # Let's say if the ball crosses the net, it must land between net and service line.
                         if (my > NET_Y and my < SVC_BACK_OFFSET) or (my < NET_Y and my > SVC_FRONT_OFFSET):
-                            # It's an IN serve (approximately)
+                            self.last_bounce_in = True
                             return "IN"
                         else:
                             self.state = "Point-Over"
                             self._increment_score()
                             return "OUT"
+            if event == "glass_hit" or event == "fence_hit":
+                if getattr(self, 'serve_in_progress', False):
+                    # Hit glass before bouncing in service box
+                    self.serve_in_progress = False
+                    self.state = "Point-Over"
+                    self._increment_score()
+                    return "OUT"
+            if event == "net_contact":
+                self.serve_in_progress = False
+                self.state = "Point-Over"
+                self._increment_score()
+                return "NET"
             return "None"
 
         elif self.state == "In-Play":
@@ -49,7 +56,7 @@ class RefereeEngine:
                         return "OUT"
                 self.last_bounce_in = True
                 return "IN"
-            elif event == "glass_hit":
+            elif event == "glass_hit" or event == "fence_hit":
                 if getattr(self, 'last_bounce_in', False):
                     # Hit turf then glass = IN
                     self.last_bounce_in = False

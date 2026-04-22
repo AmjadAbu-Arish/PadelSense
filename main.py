@@ -1,3 +1,5 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 from input_handler import (
     DisplayConfig,
     InputHandlerRuntime,
@@ -5,7 +7,6 @@ from input_handler import (
 )
 
 
-import os
 
 def choose_video_file():
     input_dir = "input_videos"
@@ -63,7 +64,7 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
+    selector = ManualCourtSelector(first_frame, video_path)
     keypoints = selector.select_keypoints()
 
     if len(keypoints) == 0:
@@ -141,9 +142,33 @@ def main():
     ref_engine = RefereeEngine()
     decisions = []
 
+
     for i in range(len(frames)):
-        pos = mini_court_positions[i] if mini_court_positions else None
-        decision = ref_engine.update_state(events[i], mapped_position=pos)
+        event_val = events[i]
+        pos_to_pass = None
+        if event_val == "bounce":
+            # Find the lowest Y (highest y-pixel) in a window around i
+            window_size = 5
+            start = max(0, i - window_size)
+            end = min(len(frames), i + window_size + 1)
+
+            best_y = -float('inf')
+            best_idx = i
+            for j in range(start, end):
+                if 1 in interpolated_positions[j]:
+                    bbox = interpolated_positions[j][1]
+                    cy = bbox[3] # bottom of bbox
+                    if cy > best_y:
+                        best_y = cy
+                        best_idx = j
+            if mini_court_positions and best_idx < len(mini_court_positions):
+                pos_to_pass = mini_court_positions[best_idx]
+        elif event_val in ["glass_hit", "net_contact"]:
+            if mini_court_positions and i < len(mini_court_positions):
+                pos_to_pass = mini_court_positions[i]
+
+        decision = ref_engine.update_state(event_val, mapped_position=pos_to_pass)
+
         decisions.append(decision)
 
     print("Initializing UI Overlay Drawers...")

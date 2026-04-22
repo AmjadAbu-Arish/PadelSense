@@ -8,7 +8,7 @@ st.set_page_config(page_title="PadelSense Dashboard", layout="wide")
 st.title("🎾 PadelSense Analytics Dashboard")
 
 # Paths
-CSV_PATH = "outputs/ball_coordinates.csv"
+CSV_PATH = "outputs/match_summary.csv"
 VIDEO_PATH = "outputs/output_video.mp4"
 HEATMAP_PATH = "outputs/heatmap.png"
 
@@ -32,11 +32,12 @@ with col1:
     else:
         st.info("No output video found. Please run the main script first.")
 
-    st.subheader("Ball Speed Analysis")
-    if df is not None and "Speed_kmh" in df.columns:
+    st.subheader("Ball Speed Analysis (km/h)")
+    if df is not None and "Ball_Speed_kmh" in df.columns:
         # Filter out rows with speed = 0.0 for a cleaner plot (optional)
-        df_speed = df[df["Speed_kmh"] > 0]
-        st.line_chart(df_speed, x="Frame", y="Speed_kmh", use_container_width=True)
+        df['Ball_Speed_kmh'] = pd.to_numeric(df['Ball_Speed_kmh'], errors='coerce')
+        df_speed = df[df['Ball_Speed_kmh'] > 0]
+        st.line_chart(df_speed, x="Frame", y="Ball_Speed_kmh", use_container_width=True)
 
         st.metric(label="Max Speed", value=f"{df['Speed_kmh'].max():.1f} km/h")
         st.metric(label="Average Speed", value=f"{df_speed['Speed_kmh'].mean():.1f} km/h")
@@ -50,12 +51,29 @@ with col2:
     else:
         st.info("Heatmap image not found. Please run the main script first.")
 
-    st.subheader("Detected Events")
-    if df is not None and "Event" in df.columns:
-        # Filter frames where an event happened
-        df_events = df[df["Event"] != "none"][["Frame", "Event", "Timestamp"]]
+    st.subheader("Match Event Log")
+    if df is not None and "Event_Type" in df.columns:
+        # Filter relevant events
+        df_events = df[(df["Event_Type"] != "none") & (df["Event_Type"].notna()) & (df["Event_Type"] != "")]
         if not df_events.empty:
-            st.dataframe(df_events, use_container_width=True)
+            for idx, row in df_events.iterrows():
+                frame_idx = row['Frame_Index']
+                event_type = row['Event_Type'].upper()
+                decision = row['Decision'] if 'Decision' in row and pd.notna(row['Decision']) and row['Decision'] != "" else ""
+
+                # Assume 30 fps for timestamp
+                fps = 30.0
+                total_seconds = frame_idx / fps
+                mins = int(total_seconds // 60)
+                secs = int(total_seconds % 60)
+                timestamp = f"{mins:02d}:{secs:02d}"
+
+                if decision:
+                    log_text = f"**{timestamp}** - {decision} ({event_type})"
+                else:
+                    log_text = f"**{timestamp}** - {event_type}"
+
+                st.markdown(f"- {log_text}")
         else:
             st.write("No specific referee events (Out, Net, etc.) recorded.")
     else:

@@ -1,8 +1,24 @@
 import cv2
 import numpy as np
+import json
+import hashlib
+import os
+import sys
+
+def get_video_hash(filepath):
+    if not os.path.exists(filepath):
+        return "default"
+    hasher = hashlib.md5()
+    with open(filepath, 'rb') as f:
+        buf = f.read(65536)
+        while len(buf) > 0:
+            hasher.update(buf)
+            buf = f.read(65536)
+    return hasher.hexdigest()
+
 
 class ManualCourtSelector:
-    def __init__(self, frame):
+    def __init__(self, frame, video_path=None):
         self.frame = frame.copy()
         self.original_frame = frame.copy()
         self.keypoints = []
@@ -13,8 +29,30 @@ class ManualCourtSelector:
             "Net Right", "Service Line Right", "Back Right Corner",
             "Center Service Line Back", "Center Service Line Front"
         ]
+        self.video_path = video_path
+        self.cache_file = None
+        if video_path:
+            h = get_video_hash(video_path)
+            self.cache_file = f"court_config_{h}.json"
+
 
     def select_keypoints(self):
+        is_headless = not sys.stdin.isatty()
+
+        if self.cache_file and os.path.exists(self.cache_file):
+            if is_headless:
+                print(f"Headless mode: auto-loading keypoints from {self.cache_file}")
+                with open(self.cache_file, 'r') as f:
+                    self.keypoints = [tuple(kp) for kp in json.load(f)]
+                return self.keypoints
+            else:
+                print(f"Found cached keypoints in {self.cache_file}.")
+                ans = input("Press [S] to skip manual selection and load cache, or any other key to re-select: ")
+                if ans.strip().lower() == 's':
+                    with open(self.cache_file, 'r') as f:
+                        self.keypoints = [tuple(kp) for kp in json.load(f)]
+                    return self.keypoints
+
         # Check if GUI support is available
         has_gui = True
         try:
@@ -76,6 +114,11 @@ class ManualCourtSelector:
                     print(f"Please select all 12 points. Currently selected: {len(self.keypoints)}")
 
         cv2.destroyWindow(self.window_name)
+        if len(self.keypoints) == 12 and self.cache_file:
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.keypoints, f)
+            print(f"Saved keypoints to {self.cache_file}")
+
         return self.keypoints
 
     def _mouse_callback(self, event, x, y, flags, param):
