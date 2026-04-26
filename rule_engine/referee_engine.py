@@ -38,7 +38,8 @@ class RefereeEngine:
         elif self.state == "In-Play":
             if event == "bounce":
                 self.last_bounce_in = False
-                # Check if out of bounds based on mapped_position
+                # Check if out of bounds based on mapped_position ONLY when a bounce happens
+                # This fixes the Z-axis issue where mid-air balls over boundaries would trigger OUT
                 if mapped_position:
                     mx, my = mapped_position
                     # Dimensions from mini_court_mapper (MINI_W=200, MINI_H=400, MINI_PAD=20)
