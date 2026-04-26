@@ -18,30 +18,22 @@ def build_mini_court_points():
     def ry(y): return int(p + ((full_h - y) / full_h) * (MINI_H - 2 * MINI_PAD))
 
     # Our 12 points map to:
-    # 0. Back Left Corner: (0, full_h)
-    # 1. Service Line Left: (0, svc_back)
-    # 2. Net Left: (0, net_y)
-    # 3. Service Line Left (Front): (0, svc_front)
-    # 4. Front Left Corner: (0, 0)
-    # 5. Front Right Corner: (full_w, 0)
-    # 6. Service Line Right (Front): (full_w, svc_front)
-    # 7. Net Right: (full_w, net_y)
-    # 8. Service Line Right: (full_w, svc_back)
-    # 9. Back Right Corner: (full_w, full_h)
-    # 10. Center Service Line Back: (full_w/2, svc_back)
-    # 11. Center Service Line Front: (full_w/2, svc_front)
+    # 0. Back Left Corner: (0, full_h) -> swap X to full_w
+    # 1. Service Line Left: (0, svc_back) -> swap X to full_w
+    # ...
+    # This correctly mirrors the court mapping to fix the flipped view
 
     return np.array([
-        [rx(0),        ry(full_h)],
-        [rx(0),        ry(svc_back)],
-        [rx(0),        ry(net_y)],
-        [rx(0),        ry(svc_front)],
-        [rx(0),        ry(0)],
-        [rx(full_w),   ry(0)],
-        [rx(full_w),   ry(svc_front)],
-        [rx(full_w),   ry(net_y)],
-        [rx(full_w),   ry(svc_back)],
         [rx(full_w),   ry(full_h)],
+        [rx(full_w),   ry(svc_back)],
+        [rx(full_w),   ry(net_y)],
+        [rx(full_w),   ry(svc_front)],
+        [rx(full_w),   ry(0)],
+        [rx(0),        ry(0)],
+        [rx(0),        ry(svc_front)],
+        [rx(0),        ry(net_y)],
+        [rx(0),        ry(svc_back)],
+        [rx(0),        ry(full_h)],
         [rx(full_w/2), ry(svc_back)],
         [rx(full_w/2), ry(svc_front)],
     ], dtype=np.float32)

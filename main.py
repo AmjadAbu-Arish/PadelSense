@@ -63,7 +63,7 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
+    selector = ManualCourtSelector(first_frame, video_path)
     keypoints = selector.select_keypoints()
 
     if len(keypoints) == 0:
