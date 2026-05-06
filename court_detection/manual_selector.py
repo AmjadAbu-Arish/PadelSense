@@ -1,11 +1,15 @@
 import cv2
 import numpy as np
+import os
+import json
+import hashlib
 
 class ManualCourtSelector:
-    def __init__(self, frame):
+    def __init__(self, frame, video_path=None):
         self.frame = frame.copy()
         self.original_frame = frame.copy()
         self.keypoints = []
+        self.video_path = video_path
         self.window_name = "Select 12 Court Keypoints"
         self.keypoint_names = [
             "Back Left Corner", "Service Line Left", "Net Left", "Service Line Left (Front)",
@@ -13,8 +17,44 @@ class ManualCourtSelector:
             "Net Right", "Service Line Right", "Back Right Corner",
             "Center Service Line Back", "Center Service Line Front"
         ]
+        self.config_path = None
+        if self.video_path:
+            # Generate MD5 hash of video path
+            hash_md5 = hashlib.md5(self.video_path.encode('utf-8')).hexdigest()
+            self.config_path = f"court_config_{hash_md5}.json"
+
+    def _load_cache(self):
+        if self.config_path and os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r') as f:
+                    data = json.load(f)
+                    if "keypoints" in data and len(data["keypoints"]) == 12:
+                        return [tuple(kp) for kp in data["keypoints"]]
+            except Exception as e:
+                print(f"Failed to load cached keypoints: {e}")
+        return None
+
+    def _save_cache(self, keypoints):
+        if self.config_path and len(keypoints) == 12:
+            try:
+                with open(self.config_path, 'w') as f:
+                    json.dump({"keypoints": keypoints}, f)
+                print(f"Keypoints cached to {self.config_path}")
+            except Exception as e:
+                print(f"Failed to save cached keypoints: {e}")
 
     def select_keypoints(self):
+        cached_keypoints = self._load_cache()
+        if cached_keypoints:
+            import sys
+            if not sys.stdin.isatty():
+                print("Headless mode detected: automatically loading cached keypoints.")
+                return cached_keypoints
+            print("\nCached keypoints found for this video.")
+            choice = input("Press [S] to Skip manual selection and use cache, or any other key to re-select: ").strip().lower()
+            if choice == 's':
+                return cached_keypoints
+
         # Check if GUI support is available
         has_gui = True
         try:
@@ -76,6 +116,8 @@ class ManualCourtSelector:
                     print(f"Please select all 12 points. Currently selected: {len(self.keypoints)}")
 
         cv2.destroyWindow(self.window_name)
+        if len(self.keypoints) == 12:
+            self._save_cache(self.keypoints)
         return self.keypoints
 
     def _mouse_callback(self, event, x, y, flags, param):

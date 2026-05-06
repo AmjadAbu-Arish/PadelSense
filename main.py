@@ -1,11 +1,11 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 from input_handler import (
     DisplayConfig,
     InputHandlerRuntime,
     PreprocessingConfig,
 )
-
-
-import os
 
 def choose_video_file():
     input_dir = "input_videos"
@@ -63,7 +63,7 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
+    selector = ManualCourtSelector(first_frame, video_path=video_path)
     keypoints = selector.select_keypoints()
 
     if len(keypoints) == 0:
@@ -107,12 +107,24 @@ def main():
     print("Extracting LSTM features...")
     lstm_features_df = tracker.extract_lstm_features(interpolated_positions)
 
+    print("Detecting Events with Bi-LSTM...")
+    from event_detector.event_classifier import classify_events
+    events = classify_events(lstm_features_df)
+
     print("Mapping to mini court...")
     from mini_court.mini_court_mapper import map_to_mini_court
     from mini_court.draw_mini_court import draw_mini_court
 
-    # We map all positions to the mini court
-    mini_court_positions = map_to_mini_court(interpolated_positions, keypoints)
+    # We map all positions to the mini court initially
+    raw_mini_court_positions = map_to_mini_court(interpolated_positions, keypoints)
+
+    # Z-Axis Fix: Only keep mini court positions on frames where the ball bounces
+    mini_court_positions = []
+    for i in range(len(raw_mini_court_positions)):
+        if events[i] == 'bounce':
+            mini_court_positions.append(raw_mini_court_positions[i])
+        else:
+            mini_court_positions.append(None)
 
     print("Tracking players...")
     from player_detector.detector import PlayerTracker
@@ -126,10 +138,6 @@ def main():
         detected_players = player_tracker.detect_and_track(frame)
         projected = player_tracker.project_to_mini_court(detected_players, H_mat)
         all_tracked_players.append(projected)
-
-    print("Detecting Events with Bi-LSTM...")
-    from event_detector.event_classifier import classify_events
-    events = classify_events(lstm_features_df)
 
     from analysis.speed_analysis import calculate_ball_speed
     speeds = calculate_ball_speed(mini_court_positions, fps=fps)
