@@ -49,7 +49,7 @@ Frame_Index,Event_Type,Decision,Ball_Speed_kmh
 47,none,,
 48,none,,
 49,none,,
-50,glass_hit,OUT,
+50,glass_hit,,
 51,none,,
 52,none,,
 53,none,,

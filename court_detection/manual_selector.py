@@ -1,11 +1,16 @@
 import cv2
 import numpy as np
+import json
+import hashlib
+import os
+import sys
 
 class ManualCourtSelector:
-    def __init__(self, frame):
+    def __init__(self, frame, video_path=None):
         self.frame = frame.copy()
         self.original_frame = frame.copy()
         self.keypoints = []
+        self.video_path = video_path
         self.window_name = "Select 12 Court Keypoints"
         self.keypoint_names = [
             "Back Left Corner", "Service Line Left", "Net Left", "Service Line Left (Front)",
@@ -15,10 +20,21 @@ class ManualCourtSelector:
         ]
 
     def select_keypoints(self):
+        config_path = None
+        if self.video_path:
+            md5 = hashlib.md5(self.video_path.encode('utf-8')).hexdigest()
+            config_path = f"court_config_{md5}.json"
+            if os.path.exists(config_path):
+                print(f"Loading cached court keypoints from {config_path}...")
+                with open(config_path, 'r') as f:
+                    self.keypoints = json.load(f)
+                return [tuple(kp) for kp in self.keypoints]
+
         # Check if GUI support is available
         has_gui = True
         try:
-            cv2.namedWindow(self.window_name)
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             cv2.setMouseCallback(self.window_name, self._mouse_callback)
         except cv2.error as e:
             has_gui = False
@@ -30,10 +46,19 @@ class ManualCourtSelector:
             return []
 
         if not has_gui:
-            return []
+            if not sys.stdin.isatty():
+                print("\nHeadless mode: GUI not available and input is not a tty.")
+                print("Skipping manual court selection.")
+                return []
+            else:
+                print("\nGUI not available. Press 's' to skip or enter to continue without keypoints.")
+                choice = input().strip().lower()
+                if choice == 's':
+                    return []
+                return []
 
         print("Please click on 12 keypoints of the court in order.")
-        print("Press 'u' to undo, 'r' to reset, 'Enter' to confirm, or 'q' to quit.")
+        print("Press 'u' to undo, 'r' to reset, 'Enter' to confirm, 's' to skip, or 'q' to quit.")
 
         while True:
             display_frame = self.frame.copy()
@@ -43,7 +68,7 @@ class ManualCourtSelector:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
             # Add general instructions
-            cv2.putText(display_frame, "Controls: [U] Undo | [R] Reset | [Enter] Confirm | [Q] Quit",
+            cv2.putText(display_frame, "Controls: [U] Undo | [R] Reset | [Enter] Confirm | [S] Skip | [Q] Quit",
                         (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
             if len(self.keypoints) < 12:
@@ -62,6 +87,10 @@ class ManualCourtSelector:
 
             if key == ord('q') or key == ord('Q'):
                 break
+            elif key == ord('s') or key == ord('S'):
+                print("Skipping manual selection.")
+                self.keypoints = []
+                break
             elif key == ord('r') or key == ord('R'):
                 self.keypoints = []
                 self.frame = self.original_frame.copy()
@@ -76,6 +105,12 @@ class ManualCourtSelector:
                     print(f"Please select all 12 points. Currently selected: {len(self.keypoints)}")
 
         cv2.destroyWindow(self.window_name)
+
+        if len(self.keypoints) == 12 and config_path:
+            with open(config_path, 'w') as f:
+                json.dump(self.keypoints, f)
+            print(f"Saved keypoints to {config_path}")
+
         return self.keypoints
 
     def _mouse_callback(self, event, x, y, flags, param):
