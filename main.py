@@ -47,6 +47,9 @@ from court_detection.manual_selector import ManualCourtSelector
 from ball_detector.detector import BallTracker, BallTrackerConfig
 
 def main():
+    import os
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
     video_path = choose_video_file()
 
     if not video_path:
@@ -63,7 +66,7 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
+    selector = ManualCourtSelector(first_frame, video_path=video_path)
     keypoints = selector.select_keypoints()
 
     if len(keypoints) == 0:
@@ -142,7 +145,7 @@ def main():
     decisions = []
 
     for i in range(len(frames)):
-        pos = mini_court_positions[i] if mini_court_positions else None
+        pos = mini_court_positions[i] if (mini_court_positions and events[i] == "bounce") else None
         decision = ref_engine.update_state(events[i], mapped_position=pos)
         decisions.append(decision)
 

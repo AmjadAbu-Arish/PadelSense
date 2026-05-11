@@ -24,14 +24,22 @@ class RefereeEngine:
                         SVC_BACK_OFFSET = ((MINI_H - 2 * MINI_PAD) / 20.0) * 16.95
 
                         # In padel, serve must hit the opponent's service box first.
-                        # We approximate it by checking if the ball bounces within the service box area (net_y to service line).
-                        # Let's say if the ball crosses the net, it must land between net and service line.
-                        if (my > NET_Y and my < SVC_BACK_OFFSET) or (my < NET_Y and my > SVC_FRONT_OFFSET):
+                        # The service box is between the net (NET_Y) and the service line.
+                        # Based on our mapping, the service lines are at SVC_FRONT_OFFSET (top half)
+                        # and SVC_BACK_OFFSET (bottom half).
+
+                        # A valid serve must be within the court width and within the service box depth
+                        is_in_width = (mx > MINI_PAD) and (mx < MINI_W - MINI_PAD)
+                        is_in_depth = (my > NET_Y and my < SVC_BACK_OFFSET) or (my < NET_Y and my > SVC_FRONT_OFFSET)
+
+                        if is_in_width and is_in_depth:
                             # It's an IN serve (approximately)
+                            self.last_bounce_in = True
                             return "IN"
                         else:
                             self.state = "Point-Over"
                             self._increment_score()
+                            self.last_bounce_in = False
                             return "OUT"
             return "None"
 
@@ -58,7 +66,7 @@ class RefereeEngine:
                     # Hit glass before turf = OUT
                     self.state = "Point-Over"
                     self._increment_score()
-                    return "OUT"
+                    return "OUT (Hit Glass First)"
             elif event == "net_contact":
                 # Assuming net_contact means it didn't cross
                 self.state = "Point-Over"

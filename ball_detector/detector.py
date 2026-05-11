@@ -45,10 +45,55 @@ class TrackNetFusion:
             self.model.load_state_dict(torch.load(model_path, map_location=self.device))
 
     def predict(self, frames):
-        # Process 3 consecutive frames to predict ball heatmaps
-        # Here we just simulate the fallback logic if TrackNet cannot find a ball
-        # In a real scenario, this would process the sequence of images through the CNN
-        return [None] * len(frames)
+        predictions = []
+        if len(frames) == 0:
+            return predictions
+
+        # Optimization: process frames in batches, keep half=False for FP32 to avoid inference errors
+        batch_size = 8
+        for i in range(0, len(frames), batch_size):
+            batch_frames = frames[i:i+batch_size]
+            batch_tensors = []
+
+            for j in range(len(batch_frames)):
+                # Frame indices for 3 consecutive frames (preventing out-of-bounds)
+                idx_curr = i + j
+                idx_prev = max(0, idx_curr - 1)
+                idx_next = min(len(frames) - 1, idx_curr + 1)
+
+                f_prev = cv2.resize(frames[idx_prev], (288, 512))
+                f_curr = cv2.resize(frames[idx_curr], (288, 512))
+                f_next = cv2.resize(frames[idx_next], (288, 512))
+
+                t_prev = torch.from_numpy(f_prev).permute(2, 0, 1).float() / 255.0
+                t_curr = torch.from_numpy(f_curr).permute(2, 0, 1).float() / 255.0
+                t_next = torch.from_numpy(f_next).permute(2, 0, 1).float() / 255.0
+
+                # Stack 3 consecutive frames to form 9-channel input for TrackNet
+                tensor = torch.cat([t_prev, t_curr, t_next], dim=0)
+                batch_tensors.append(tensor)
+
+            batch_input = torch.stack(batch_tensors).to(self.device)
+            with torch.no_grad():
+                # Inference without half precision
+                outputs = self.model(batch_input)
+                # Process outputs to find peak heatmap coordinate
+                for j in range(len(batch_frames)):
+                    out_map = outputs[j].cpu().numpy().sum(axis=0) # Sum over channels
+                    if np.max(out_map) > 0.5: # Threshold
+                        y, x = np.unravel_index(np.argmax(out_map), out_map.shape)
+                        # Normalize coordinates to original frame size
+                        h, w = batch_frames[j].shape[:2]
+                        x_norm = (x / out_map.shape[1]) * w
+                        y_norm = (y / out_map.shape[0]) * h
+                        # Create bounding box {1: [x1, y1, x2, y2]} around the center
+                        box_size = 10
+                        x1, y1 = max(0, x_norm - box_size), max(0, y_norm - box_size)
+                        x2, y2 = min(w, x_norm + box_size), min(h, y_norm + box_size)
+                        predictions.append({1: [float(x1), float(y1), float(x2), float(y2)]})
+                    else:
+                        predictions.append(None)
+        return predictions
 
 class BallTracker:
     def __init__(self, config: BallTrackerConfig, model_path: str):
@@ -68,10 +113,19 @@ class BallTracker:
         prev_center = None
         missed_frames = 0
 
-        # If TrackNet is used, get its predictions (dummy for now)
+        # If TrackNet is used, get its predictions
         tracknet_preds = self.tracknet.predict(frames) if self.tracknet else [None] * len(frames)
 
         for idx, frame in enumerate(frames):
+            # TrackNet fusion logic
+            tn_pred = tracknet_preds[idx]
+            if tn_pred is not None:
+                ball_detections.append(tn_pred)
+                box = tn_pred[1]
+                prev_center = ((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
+                missed_frames = 0
+                continue
+
             results = self.model(frame)[0]
             boxes = results.boxes
 
@@ -103,14 +157,6 @@ class BallTracker:
                     best_score = score
                     best_box = coords
                     best_center = (center_x, center_y)
-
-            # TrackNet fusion logic
-            tn_pred = tracknet_preds[idx]
-            if tn_pred is not None:
-                # If TrackNet provides a prediction, fuse it with YOLO
-                # e.g., if YOLO confidence is low, trust TrackNet
-                # For this stub, we just pretend it might override YOLO if it existed
-                pass
 
             # Match condition
             if best_box is not None and (prev_center is None or best_score > 0):
