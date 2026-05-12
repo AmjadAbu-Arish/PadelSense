@@ -14,7 +14,9 @@ def build_mini_court_points():
     svc_front = 3.05
     svc_back  = 16.95
 
-    def rx(x): return int(p + (x / full_w) * w)
+    # Fix homography output being flipped/mirrored relative to video feed
+    # Map x = 0 to the right side of the mini court, x = full_w to the left
+    def rx(x): return int(p + ((full_w - x) / full_w) * w)
     def ry(y): return int(p + ((full_h - y) / full_h) * (MINI_H - 2 * MINI_PAD))
 
     # Our 12 points map to:
@@ -54,7 +56,7 @@ def get_homography(court_keypoints):
     H_mat, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     return H_mat
 
-def map_to_mini_court(positions, court_keypoints):
+def map_to_mini_court(positions, court_keypoints, events=None):
     H_mat = get_homography(court_keypoints)
     if H_mat is None:
         print("Cannot map to mini court: invalid keypoints or homography.")
@@ -63,8 +65,11 @@ def map_to_mini_court(positions, court_keypoints):
     print("Mapping positions to mini court...")
     mapped_positions = []
 
-    for pos_dict in positions:
-        if 1 in pos_dict:
+    if events is None:
+        events = ["none"] * len(positions)
+
+    for pos_dict, event in zip(positions, events):
+        if 1 in pos_dict and event == "bounce":
             bbox = pos_dict[1]
             cx = (bbox[0] + bbox[2]) / 2.0
             cy = bbox[3] # map the bottom of the bounding box
