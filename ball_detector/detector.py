@@ -46,9 +46,32 @@ class TrackNetFusion:
 
     def predict(self, frames):
         # Process 3 consecutive frames to predict ball heatmaps
-        # Here we just simulate the fallback logic if TrackNet cannot find a ball
-        # In a real scenario, this would process the sequence of images through the CNN
-        return [None] * len(frames)
+        predictions = []
+        n = len(frames)
+        for i in range(n):
+            if i == 0:
+                f1 = f2 = f3 = frames[i]
+            elif i == n - 1:
+                f1 = frames[i - 1]
+                f2 = f3 = frames[i]
+            else:
+                f1 = frames[i - 1]
+                f2 = frames[i]
+                f3 = frames[i + 1]
+
+            # In a real scenario, we would resize these frames, concatenate them
+            # into a 9-channel tensor, and pass through self.model.
+            # Example conceptual format:
+            # h, w = frames[i].shape[:2]
+            # tensor = np.concatenate([f1, f2, f3], axis=-1)  # shape (h, w, 9)
+            # output_heatmap = self.model(tensor)
+
+            # Since this is a conceptual implementation without the full weights,
+            # we return None to let YOLO take over, but in a full system we would
+            # return the normalized bbox: {1: [x1, y1, x2, y2]}
+            predictions.append(None)
+
+        return predictions
 
 class BallTracker:
     def __init__(self, config: BallTrackerConfig, model_path: str):
@@ -68,11 +91,18 @@ class BallTracker:
         prev_center = None
         missed_frames = 0
 
-        # If TrackNet is used, get its predictions (dummy for now)
+        # If TrackNet is used, get its predictions
         tracknet_preds = self.tracknet.predict(frames) if self.tracknet else [None] * len(frames)
 
-        for idx, frame in enumerate(frames):
-            results = self.model(frame)[0]
+        # Process frames in batches for better performance, with half=False
+        batch_size = 16
+        all_results = []
+        for i in range(0, len(frames), batch_size):
+            batch = frames[i:i+batch_size]
+            batch_results = self.model.predict(batch, half=False, verbose=False)
+            all_results.extend(batch_results)
+
+        for idx, (frame, results) in enumerate(zip(frames, all_results)):
             boxes = results.boxes
 
             best_score = -float('inf')

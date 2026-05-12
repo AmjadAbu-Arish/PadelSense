@@ -4,15 +4,15 @@ from ultralytics import YOLO
 
 class PlayerTracker:
     def __init__(self, model_path="yolov8n.pt"):
-        # We use YOLOv8 to detect class 0 (person)
-        self.model = YOLO(model_path)
+        # We use YOLOv11 to detect class 0 (person)
+        self.model = YOLO(model_path.replace("v8", "11"))
 
     def detect_and_track(self, frame):
         """
         Uses ByteTrack to detect and track persons in the frame.
         """
         # tracker="bytetrack.yaml" is built-in with ultralytics
-        results = self.model.track(frame, classes=[0], tracker="bytetrack.yaml", persist=True, verbose=False)[0]
+        results = self.model.track(frame, classes=[0], tracker="bytetrack.yaml", persist=True, half=False, verbose=False)[0]
 
         tracked_players = []
         if results.boxes is not None and results.boxes.id is not None:

@@ -1,11 +1,16 @@
 import cv2
 import numpy as np
+import os
+import json
+import sys
 
 class ManualCourtSelector:
-    def __init__(self, frame):
+    def __init__(self, frame, video_hash="default"):
         self.frame = frame.copy()
         self.original_frame = frame.copy()
         self.keypoints = []
+        self.video_hash = video_hash
+        self.cache_path = f"court_config_{self.video_hash}.json"
         self.window_name = "Select 12 Court Keypoints"
         self.keypoint_names = [
             "Back Left Corner", "Service Line Left", "Net Left", "Service Line Left (Front)",
@@ -15,10 +20,49 @@ class ManualCourtSelector:
         ]
 
     def select_keypoints(self):
+        # Check cache
+        if os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, 'r') as f:
+                    cached_keypoints = json.load(f)
+
+                if len(cached_keypoints) == 12:
+                    # In headless mode, load automatically
+                    if not sys.stdin.isatty():
+                        print(f"Headless mode: Loading cached keypoints from {self.cache_path}")
+                        self.keypoints = [(x, y) for x, y in cached_keypoints]
+                        return self.keypoints
+
+                    print(f"Cached keypoints found in {self.cache_path}. Press [S] to skip manual selection and use them, or any other key to re-select.")
+                    import select
+                    import tty
+                    import termios
+
+                    # Read single character from stdin without requiring enter
+                    fd = sys.stdin.fileno()
+                    old_settings = termios.tcgetattr(fd)
+                    try:
+                        tty.setraw(sys.stdin.fileno())
+                        i, o, e = select.select([sys.stdin], [], [], 5) # 5 second timeout
+                        if i:
+                            ch = sys.stdin.read(1)
+                        else:
+                            ch = 's' # timeout defaults to skip
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+                    if ch.lower() == 's':
+                        print("Using cached keypoints.")
+                        self.keypoints = [(x, y) for x, y in cached_keypoints]
+                        return self.keypoints
+            except Exception as e:
+                print(f"Failed to load cached keypoints: {e}")
+
         # Check if GUI support is available
         has_gui = True
         try:
-            cv2.namedWindow(self.window_name)
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             cv2.setMouseCallback(self.window_name, self._mouse_callback)
         except cv2.error as e:
             has_gui = False
@@ -76,6 +120,14 @@ class ManualCourtSelector:
                     print(f"Please select all 12 points. Currently selected: {len(self.keypoints)}")
 
         cv2.destroyWindow(self.window_name)
+
+        if len(self.keypoints) == 12:
+            try:
+                with open(self.cache_path, 'w') as f:
+                    json.dump(self.keypoints, f)
+            except Exception as e:
+                print(f"Failed to save keypoints to cache: {e}")
+
         return self.keypoints
 
     def _mouse_callback(self, event, x, y, flags, param):

@@ -24,15 +24,27 @@ class RefereeEngine:
                         SVC_BACK_OFFSET = ((MINI_H - 2 * MINI_PAD) / 20.0) * 16.95
 
                         # In padel, serve must hit the opponent's service box first.
-                        # We approximate it by checking if the ball bounces within the service box area (net_y to service line).
-                        # Let's say if the ball crosses the net, it must land between net and service line.
-                        if (my > NET_Y and my < SVC_BACK_OFFSET) or (my < NET_Y and my > SVC_FRONT_OFFSET):
-                            # It's an IN serve (approximately)
-                            return "IN"
-                        else:
-                            self.state = "Point-Over"
-                            self._increment_score()
-                            return "OUT"
+                        # We approximate it by checking if the ball bounces within the service box area.
+
+                        # Assuming the server is on one side, it must cross the net and land before the service line.
+                        # We'll just check if it lands in EITHER service box for this simplified rule engine.
+                        # Top half service box: between NET_Y and SVC_FRONT_OFFSET
+                        # Bottom half service box: between NET_Y and SVC_BACK_OFFSET
+                        # BUT ry is mapped such that 0 is at bottom, full_h is at top
+                        # Wait, let's use the actual pixel values.
+                        # NET_Y = 200, SVC_FRONT = ry(3.05) ~ 20 + (16.95/20)*360 = 325
+                        # SVC_BACK = ry(16.95) ~ 20 + (3.05/20)*360 = 75
+
+                        # The ball must cross the net and hit the service box. For simplicity:
+                        if (NET_Y < my < MINI_H - MINI_PAD) or (MINI_PAD < my < NET_Y):
+                             # Need to check if it's within the service line limits
+                             if (NET_Y < my < NET_Y + abs(SVC_FRONT_OFFSET - NET_Y)) or (NET_Y - abs(NET_Y - SVC_BACK_OFFSET) < my < NET_Y):
+                                 # It's an IN serve (approximately)
+                                 return "IN"
+
+                        self.state = "Point-Over"
+                        self._increment_score()
+                        return "OUT"
             return "None"
 
         elif self.state == "In-Play":

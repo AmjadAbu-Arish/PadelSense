@@ -1,11 +1,11 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 from input_handler import (
     DisplayConfig,
     InputHandlerRuntime,
     PreprocessingConfig,
 )
-
-
-import os
 
 def choose_video_file():
     input_dir = "input_videos"
@@ -63,7 +63,11 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
+    # To hash video path for keypoints caching
+    import hashlib
+    video_hash = hashlib.md5(video_path.encode()).hexdigest()
+
+    selector = ManualCourtSelector(first_frame, video_hash)
     keypoints = selector.select_keypoints()
 
     if len(keypoints) == 0:
@@ -94,8 +98,8 @@ def main():
     model_path = "models/ball_detector/ball_detector.pt"
     if not os.path.exists(model_path):
         print(f"Warning: Model not found at {model_path}")
-        print("Using default YOLOv8n model instead.")
-        model_path = "yolov8n.pt"
+        print("Using default YOLOv11 model instead.")
+        model_path = "yolo11n.pt"
     tracker = BallTracker(config, model_path)
 
     print("Running detection...")
@@ -107,16 +111,20 @@ def main():
     print("Extracting LSTM features...")
     lstm_features_df = tracker.extract_lstm_features(interpolated_positions)
 
+    print("Detecting Events with Bi-LSTM...")
+    from event_detector.event_classifier import classify_events
+    events = classify_events(lstm_features_df)
+
     print("Mapping to mini court...")
     from mini_court.mini_court_mapper import map_to_mini_court
     from mini_court.draw_mini_court import draw_mini_court
 
-    # We map all positions to the mini court
-    mini_court_positions = map_to_mini_court(interpolated_positions, keypoints)
+    # We map all positions to the mini court, passing events to only map bounce frames
+    mini_court_positions = map_to_mini_court(interpolated_positions, keypoints, events=events)
 
     print("Tracking players...")
     from player_detector.detector import PlayerTracker
-    player_tracker = PlayerTracker(model_path="yolov8n.pt")
+    player_tracker = PlayerTracker(model_path="yolo11n.pt")
 
     from mini_court.mini_court_mapper import get_homography
     H_mat = get_homography(keypoints)
@@ -126,10 +134,6 @@ def main():
         detected_players = player_tracker.detect_and_track(frame)
         projected = player_tracker.project_to_mini_court(detected_players, H_mat)
         all_tracked_players.append(projected)
-
-    print("Detecting Events with Bi-LSTM...")
-    from event_detector.event_classifier import classify_events
-    events = classify_events(lstm_features_df)
 
     from analysis.speed_analysis import calculate_ball_speed
     speeds = calculate_ball_speed(mini_court_positions, fps=fps)
