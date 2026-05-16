@@ -26,7 +26,11 @@ class RefereeEngine:
                         # In padel, serve must hit the opponent's service box first.
                         # We approximate it by checking if the ball bounces within the service box area (net_y to service line).
                         # Let's say if the ball crosses the net, it must land between net and service line.
-                        if (my > NET_Y and my < SVC_BACK_OFFSET) or (my < NET_Y and my > SVC_FRONT_OFFSET):
+                        # To hit the service box, my should be between NET_Y and SVC_BACK_OFFSET, OR NET_Y and SVC_FRONT_OFFSET
+                        # AND mx should be between MINI_PAD and MINI_W - MINI_PAD
+                        in_y = (NET_Y < my < MINI_PAD + SVC_BACK_OFFSET) or (MINI_PAD + SVC_FRONT_OFFSET < my < NET_Y)
+                        in_x = (MINI_PAD < mx < MINI_W - MINI_PAD)
+                        if in_y and in_x:
                             # It's an IN serve (approximately)
                             return "IN"
                         else:

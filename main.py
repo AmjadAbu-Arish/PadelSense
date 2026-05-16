@@ -42,6 +42,8 @@ def choose_video_file():
 
 import cv2
 import pandas as pd
+import hashlib
+import json
 from tqdm import tqdm
 from court_detection.manual_selector import ManualCourtSelector
 from ball_detector.detector import BallTracker, BallTrackerConfig
@@ -63,8 +65,33 @@ def main():
         print("Failed to read the first frame.")
         return
 
-    selector = ManualCourtSelector(first_frame)
-    keypoints = selector.select_keypoints()
+    # Check for cached keypoints
+    video_hash = hashlib.md5(video_path.encode()).hexdigest()
+    cache_file = f"court_config_{video_hash}.json"
+
+    keypoints = None
+    if os.path.exists(cache_file):
+        print(f"\nFound cached keypoints for this video ({cache_file}).")
+        # Headless mode automatic loading fallback
+        import sys
+        if not sys.stdin.isatty():
+            print("Running in headless mode, automatically loading cached keypoints.")
+            with open(cache_file, "r") as f:
+                keypoints = json.load(f)
+        else:
+            skip = input("Press [S] to Skip manual selection and use cached keypoints, or [Enter] to select new ones: ").strip().lower()
+            if skip == 's':
+                with open(cache_file, "r") as f:
+                    keypoints = json.load(f)
+
+    if keypoints is None:
+        selector = ManualCourtSelector(first_frame)
+        keypoints = selector.select_keypoints()
+        # Save valid keypoints
+        if len(keypoints) == 12:
+            with open(cache_file, "w") as f:
+                json.dump(keypoints, f)
+            print(f"Saved keypoints to cache: {cache_file}")
 
     if len(keypoints) == 0:
         print("\nNo keypoints selected. Proceeding without manual court calibration.")
@@ -140,6 +167,11 @@ def main():
     from rule_engine.referee_engine import RefereeEngine
     ref_engine = RefereeEngine()
     decisions = []
+
+    # Z-Axis Fix: Only map position during a bounce to avoid out-of-bounds mapping for high balls
+    for i in range(len(frames)):
+        if events[i] != "bounce" and mini_court_positions:
+            mini_court_positions[i] = None
 
     for i in range(len(frames)):
         pos = mini_court_positions[i] if mini_court_positions else None
